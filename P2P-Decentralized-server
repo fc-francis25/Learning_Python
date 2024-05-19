@@ -1,0 +1,262 @@
+
+import socket
+import threading
+import tkinter as tk
+from tkinter import scrolledtext, messagebox, filedialog
+from datetime import datetime  # import the following modules to implement it in the program
+
+# Constants GUI UI/UX
+DARK_GREY = '#121212'
+MEDIUM_GREY = '#1F1B24'
+OCEAN_BLUE = '#464EB8'
+WHITE = "white"
+FONT = ("Helvetica", 17)
+BUTTON_FONT = ("Helvetica", 15)
+SMALL_FONT = ("Helvetica", 13)
+
+# Globals
+client_socket = None  # set a variable for decentralized server
+# This will serves as the P2P application
+
+message_history = []
+
+
+def add_message(message):  # This function will be use to send a message to each other
+    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    # Display the current date and time when the message is send and what time the user
+    # entered the connection
+
+    formatted_message = f"[{current_time}] {message}"
+    message_box.config(state=tk.NORMAL)
+    message_box.insert(tk.END, formatted_message + '\n')
+    message_box.yview(tk.END)  # Auto-scroll to the bottom
+    message_box.config(state=tk.DISABLED)
+    message_history.append(formatted_message)
+
+
+def connect_to_server():  # This function will connet the following variables bellow
+    global client_socket
+    global username
+    my_ip = my_ip_textbox.get().strip()  # var for ip address
+    my_port = my_port_textbox.get().strip()  # var for port address
+    friend_ip = friend_ip_textbox.get().strip()  # var for friend Ip address
+    friend_port = friend_port_textbox.get().strip()  # var for friend port address
+    username = username_textbox.get().strip()  # this will variable will help the user to identify each other
+
+    if not my_ip or not my_port or not friend_ip or not friend_port or not username:
+        messagebox.showerror("Error", "Please enter all IP addresses, port numbers, and username.")
+        return  # if one of entries is missing. This message box will appear at the user
+
+    # try except method
+    try:
+        client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)  # This will served as the TCP connection
+        # TCP connection allows the program to exchange messages over a network
+        client_socket.bind((my_ip, int(my_port)))  # This bind function and connect function is important to the program
+        # This will identify each P2P Ip and port address
+        client_socket.connect((friend_ip, int(friend_port)))
+        # After the connection is made, the following IP, Port address and username will appear at the text box
+
+        add_message(f"\nIp address:{friend_ip}\nPort Address: {friend_port}\nUsername: {username}")
+
+        threading.Thread(target=receive_messages, daemon=True).start()
+
+        disable_connection_controls()
+        message_button.config(state=tk.NORMAL)  # Enable Send button
+        # after enabling it the program will not allow to input any character at the text entries
+        # it will allow the user if one of them press the disconnect button
+
+    except Exception as e:
+        messagebox.showerror("Error", f"Failed to connect: {e}")
+
+
+
+
+def disconnect(): #This function will clear the content of the text box
+    #If the user wanted to clear
+    global client_socket
+    if client_socket:
+        client_socket.close()
+        client_socket = None
+
+
+        message_box.config(state=tk.NORMAL)  # Ensure the message box is editable
+        message_box.delete(1.0, tk.END)  # Clear the message box
+        message_box.config(state=tk.DISABLED)  # Disable editing again
+        enable_connection_controls()
+        add_message(f"{username}: Left the chat.")  # display a message after the connection is disconnected
+        message_button.config(state=tk.DISABLED)  # Disable Send button
+
+
+def receive_file(file_content): #receive a file .txt file only
+    filename, file_data = file_content.split("|")
+    file_path = filedialog.asksaveasfilename(defaultextension=".txt", filetypes=[("Text files", "*.txt")], initialfile=filename)
+    if file_path:
+        with open(file_path, 'w') as file:
+            file.write(file_data)
+        add_message(f"File received: {filename}")
+
+def receive_messages(): #recieved the messages coming from the user
+    global client_socket
+    try:
+        while client_socket:
+            message = client_socket.recv(2048).decode('utf-8')
+            if message:
+                add_message(message)
+
+    except Exception as e:
+        add_message(f"Connection lost: {e}")
+        disconnect()
+
+def send_file():
+    file_path = filedialog.askopenfilename(filetypes=[("Text files", "*.txt")])
+    if file_path:
+        with open(file_path, 'r') as file:
+            filename = file.name.split("/")[-1]
+            file_content = file.read()
+            message = f"\n=======================\nFile sent by {username}: {filename}\n=======================\n{file_content}\n======================="
+            client_socket.sendall(message.encode())
+
+        add_message(f"File sent: {filename}")
+
+
+
+def send_message(event=None):
+    if client_socket and message_textbox.get().strip():
+        message = f"{username}: {message_textbox.get().strip()}"
+        client_socket.sendall(message.encode())
+        message_textbox.delete(0, tk.END)
+        add_message(f"You: {message.split(': ')[1]}")
+    else:
+        messagebox.showerror("Error", "Cannot send an empty message or not connected.")
+
+
+def disable_connection_controls():  # disable the textboxes once the users lock there addresses
+    my_ip_textbox.config(state=tk.DISABLED)
+    my_port_textbox.config(state=tk.DISABLED)
+    friend_ip_textbox.config(state=tk.DISABLED)
+    friend_port_textbox.config(state=tk.DISABLED)
+    username_textbox.config(state=tk.DISABLED)
+    connect_button.config(state=tk.DISABLED)
+    disconnect_button.config(state=tk.NORMAL)
+
+
+def enable_connection_controls():  # enable the textboxes once the users lock there addresses
+    my_ip_textbox.config(state=tk.NORMAL)
+    my_port_textbox.config(state=tk.NORMAL)
+    friend_ip_textbox.config(state=tk.NORMAL)
+    friend_port_textbox.config(state=tk.NORMAL)
+    username_textbox.config(state=tk.NORMAL)
+    connect_button.config(state=tk.NORMAL)
+    disconnect_button.config(state=tk.DISABLED)
+
+def save_history():
+    filename = filedialog.asksaveasfilename(defaultextension=".txt", filetypes=[("Text files", "*.txt")])
+    if filename:
+        with open(filename, 'w') as file:
+            for message in message_history:
+                file.write(message + '\n')
+
+def load_history():
+    filename = filedialog.askopenfilename(filetypes=[("Text files", "*.txt")])
+    if filename:
+        with open(filename, 'r') as file:
+            message_history = file.readlines()
+
+            # Find the index of the first message line
+            first_message_index = next((i for i, line in enumerate(message_history) if line.strip()), None)
+
+            # Split the first message line based on the timestamp
+            first_message_content = message_history[first_message_index].split("] ")[1]
+
+            # Add border to the entire loaded history
+            history_with_border = f"\n=======================\n------History Message------\n{first_message_content}"
+            for line in message_history[first_message_index + 1:]:
+                history_with_border += line
+            history_with_border += "\n======================="
+
+            add_message(history_with_border)
+
+
+
+# User Interface Setup
+root = tk.Tk()
+root.geometry("840x640")
+root.title("P2P Chat Application")
+root.resizable(False, False)
+
+top_frame = tk.Frame(root, bg=DARK_GREY)
+top_frame.grid(row=0, column=0, sticky="ew")
+
+middle_frame = tk.Frame(root, bg=MEDIUM_GREY)
+middle_frame.grid(row=1, column=0, sticky="ew")
+
+bottom_frame = tk.Frame(root, bg=DARK_GREY)
+bottom_frame.grid(row=2, column=0, sticky="ew")
+
+# Top Frame Widgets
+my_ip_label = tk.Label(top_frame, text="My IP:", font=FONT, bg=DARK_GREY, fg=WHITE)
+my_ip_label.grid(row=0, column=0, padx=10, pady=10)
+
+my_ip_textbox = tk.Entry(top_frame, font=FONT, bg=WHITE, fg=MEDIUM_GREY, width=15)
+my_ip_textbox.grid(row=0, column=1, padx=10, pady=10)
+
+my_port_label = tk.Label(top_frame, text="My Port:", font=FONT, bg=DARK_GREY, fg=WHITE)
+my_port_label.grid(row=0, column=2, padx=10, pady=10)
+
+my_port_textbox = tk.Entry(top_frame, font=FONT, bg=WHITE, fg=MEDIUM_GREY, width=8)
+my_port_textbox.grid(row=0, column=3, padx=10, pady=10)
+
+friend_ip_label = tk.Label(top_frame, text="Friend's IP:", font=FONT, bg=DARK_GREY, fg=WHITE)
+friend_ip_label.grid(row=1, column=0, padx=10, pady=10)
+
+friend_ip_textbox = tk.Entry(top_frame, font=FONT, bg=WHITE, fg=MEDIUM_GREY, width=15)
+friend_ip_textbox.grid(row=1, column=1, padx=10, pady=10)
+
+friend_port_label = tk.Label(top_frame, text="Friend's Port:", font=FONT, bg=DARK_GREY, fg=WHITE)
+friend_port_label.grid(row=1, column=2, padx=10, pady=10)
+
+friend_port_textbox = tk.Entry(top_frame, font=FONT, bg=WHITE, fg=MEDIUM_GREY, width=8)
+friend_port_textbox.grid(row=1, column=3, padx=10, pady=10)
+
+username_label = tk.Label(top_frame, text="Username:", font=FONT, bg=DARK_GREY, fg=WHITE)
+username_label.grid(row=2, column=0, padx=10, pady=10)
+
+username_textbox = tk.Entry(top_frame, font=FONT, bg=WHITE, fg=MEDIUM_GREY, width=15)
+username_textbox.grid(row=2, column=1, padx=10, pady=10)
+
+connect_button = tk.Button(top_frame, text="Connect", font=BUTTON_FONT, bg=OCEAN_BLUE, fg=WHITE,
+                           command=connect_to_server)
+connect_button.grid(row=2, column=2, padx=10, pady=10)
+
+disconnect_button = tk.Button(top_frame, text="Disconnect", font=BUTTON_FONT, bg=OCEAN_BLUE, fg=WHITE,
+                              command=disconnect)
+disconnect_button.grid(row=2, column=3, padx=10, pady=10)
+disconnect_button.config(state=tk.DISABLED)
+
+# Middle Frame Widgets
+
+message_box = scrolledtext.ScrolledText(middle_frame, width=85, height=20, font=SMALL_FONT, bg=MEDIUM_GREY, fg=WHITE)
+message_box.grid(row=0, column=0, padx=20, pady=10)
+message_box.config(state=tk.DISABLED)
+
+
+# Bottom Frame Widgets
+message_textbox = tk.Entry(bottom_frame, font=FONT, bg=WHITE, fg=MEDIUM_GREY, width=55)
+message_textbox.grid(row=0, column=0, padx=20, pady=10)
+message_textbox.bind("<Return>",send_message)
+
+send_file_button = tk.Button(top_frame, text="Send File", font=BUTTON_FONT, bg=OCEAN_BLUE, fg=WHITE,
+                             command=send_file)
+send_file_button.grid(row=2, column=4, padx=10, pady=10)
+
+save_button = tk.Button(top_frame, text="Save History", font=BUTTON_FONT, bg=OCEAN_BLUE, fg=WHITE, command=save_history)
+save_button.grid(row=0, column=4, padx=10, pady=10)
+
+load_button = tk.Button(top_frame, text="Load History", font=BUTTON_FONT, bg=OCEAN_BLUE, fg=WHITE, command=load_history)
+load_button.grid(row=1, column=4, padx=10, pady=10)
+
+message_button = tk.Button(bottom_frame, text="Send", font=BUTTON_FONT, bg=OCEAN_BLUE, fg=WHITE, command=send_message)
+message_button.grid(row=0, column=1, padx=10, pady=10)
+message_button.config(state=tk.DISABLED)
+
+root.mainloop()
